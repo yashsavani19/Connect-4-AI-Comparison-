@@ -1,0 +1,263 @@
+import numpy as np
+import random
+import pygame
+import sys
+import math
+
+# Colors for the game
+BLUE = (0, 0, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+YELLOW = (255, 255, 0)
+
+# Dimensions of Connect Four board
+ROWS = 6
+COLUMNS = 7
+
+# Game pieces and players
+HUMAN = 0
+COMPUTER = 1
+
+EMPTY_SLOT = 0
+HUMAN_PIECE = 1
+COMPUTER_PIECE = 2
+
+WIN_CONDITION = 4  # Connect 4 in a row to win
+
+def initialize_board():
+    return np.zeros((ROWS, COLUMNS))
+
+def drop_disc(board, row, col, piece):
+    board[row][col] = piece
+
+def is_column_open(board, col):
+    return board[ROWS-1][col] == EMPTY_SLOT
+
+def get_open_row(board, col):
+    for row in range(ROWS):
+        if board[row][col] == EMPTY_SLOT:
+            return row
+
+def display_board(board):
+    print(np.flip(board, 0))
+
+def check_win(board, piece):
+    # Check horizontal win conditions
+    for col in range(COLUMNS - 3):
+        for row in range(ROWS):
+            if all([board[row][col + i] == piece for i in range(WIN_CONDITION)]):
+                return True
+
+    # Check vertical win conditions
+    for col in range(COLUMNS):
+        for row in range(ROWS - 3):
+            if all([board[row + i][col] == piece for i in range(WIN_CONDITION)]):
+                return True
+
+    # Check diagonal (positive slope) win conditions
+    for col in range(COLUMNS - 3):
+        for row in range(ROWS - 3):
+            if all([board[row + i][col + i] == piece for i in range(WIN_CONDITION)]):
+                return True
+
+    # Check diagonal (negative slope) win conditions
+    for col in range(COLUMNS - 3):
+        for row in range(3, ROWS):
+            if all([board[row - i][col + i] == piece for i in range(WIN_CONDITION)]):
+                return True
+
+def assess_window(window, piece):
+    score = 0
+    opponent_piece = HUMAN_PIECE if piece == COMPUTER_PIECE else COMPUTER_PIECE
+
+    if window.count(piece) == 4:
+        score += 100
+    elif window.count(piece) == 3 and window.count(EMPTY_SLOT) == 1:
+        score += 5
+    elif window.count(piece) == 2 and window.count(EMPTY_SLOT) == 2:
+        score += 2
+
+    if window.count(opponent_piece) == 3 and window.count(EMPTY_SLOT) == 1:
+        score -= 4
+
+    return score
+
+def evaluate_board(board, piece):
+    total_score = 0
+
+    # Center column scoring
+    center_array = [int(i) for i in list(board[:, COLUMNS // 2])]
+    center_count = center_array.count(piece)
+    total_score += center_count * 3
+
+    # Horizontal scoring
+    for row in range(ROWS):
+        row_array = [int(i) for i in list(board[row, :])]
+        for col in range(COLUMNS - 3):
+            window = row_array[col:col + WIN_CONDITION]
+            total_score += assess_window(window, piece)
+
+    # Vertical scoring
+    for col in range(COLUMNS):
+        col_array = [int(i) for i in list(board[:, col])]
+        for row in range(ROWS - 3):
+            window = col_array[row:row + WIN_CONDITION]
+            total_score += assess_window(window, piece)
+
+    # Positive slope diagonal scoring
+    for row in range(ROWS - 3):
+        for col in range(COLUMNS - 3):
+            window = [board[row + i][col + i] for i in range(WIN_CONDITION)]
+            total_score += assess_window(window, piece)
+
+    # Negative slope diagonal scoring
+    for row in range(ROWS - 3):
+        for col in range(COLUMNS - 3):
+            window = [board[row + 3 - i][col + i] for i in range(WIN_CONDITION)]
+            total_score += assess_window(window, piece)
+
+    return total_score
+
+def terminal_node_check(board):
+    return check_win(board, HUMAN_PIECE) or check_win(board, COMPUTER_PIECE) or len(valid_columns(board)) == 0
+
+def minimax(board, depth, alpha, beta, maximizing_player):
+    valid_cols = valid_columns(board)
+    is_terminal = terminal_node_check(board)
+    if depth == 0 or is_terminal:
+        if is_terminal:
+            if check_win(board, COMPUTER_PIECE):
+                return (None, 100000000000000)
+            elif check_win(board, HUMAN_PIECE):
+                return (None, -10000000000000)
+            else:  # No valid moves left
+                return (None, 0)
+        else:
+            return (None, evaluate_board(board, COMPUTER_PIECE))
+
+    if maximizing_player:
+        value = -math.inf
+        chosen_column = random.choice(valid_cols)
+        for col in valid_cols:
+            row = get_open_row(board, col)
+            temp_board = board.copy()
+            drop_disc(temp_board, row, col, COMPUTER_PIECE)
+            new_score = minimax(temp_board, depth - 1, alpha, beta, False)[1]
+            if new_score > value:
+                value = new_score
+                chosen_column = col
+            alpha = max(alpha, value)
+            if alpha >= beta:
+                break
+        return chosen_column, value
+
+    else:  # Minimizing player
+        value = math.inf
+        chosen_column = random.choice(valid_cols)
+        for col in valid_cols:
+            row = get_open_row(board, col)
+            temp_board = board.copy()
+            drop_disc(temp_board, row, col, HUMAN_PIECE)
+            new_score = minimax(temp_board, depth - 1, alpha, beta, True)[1]
+            if new_score < value:
+                value = new_score
+                chosen_column = col
+            beta = min(beta, value)
+            if alpha >= beta:
+                break
+        return chosen_column, value
+
+def valid_columns(board):
+    return [col for col in range(COLUMNS) if is_column_open(board, col)]
+
+def best_move(board, piece):
+    valid_cols = valid_columns(board)
+    best_col = random.choice(valid_cols)
+    best_score = -10000
+    for col in valid_cols:
+        row = get_open_row(board, col)
+        temp_board = board.copy()
+        drop_disc(temp_board, row, col, piece)
+        score = evaluate_board(temp_board, piece)
+        if score > best_score:
+            best_score = score
+            best_col = col
+    return best_col
+
+def render_board(board):
+    for col in range(COLUMNS):
+        for row in range(ROWS):
+            pygame.draw.rect(screen, BLUE, (col * SQUARE_SIZE, row * SQUARE_SIZE + SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
+            pygame.draw.circle(screen, BLACK, (int(col * SQUARE_SIZE + SQUARE_SIZE / 2), int(row * SQUARE_SIZE + SQUARE_SIZE + SQUARE_SIZE / 2)), RADIUS)
+    for col in range(COLUMNS):
+        for row in range(ROWS):
+            if board[row][col] == HUMAN_PIECE:
+                pygame.draw.circle(screen, RED, (int(col * SQUARE_SIZE + SQUARE_SIZE / 2), height - int(row * SQUARE_SIZE + SQUARE_SIZE / 2)), RADIUS)
+            elif board[row][col] == COMPUTER_PIECE:
+                pygame.draw.circle(screen, YELLOW, (int(col * SQUARE_SIZE + SQUARE_SIZE / 2), height - int(row * SQUARE_SIZE + SQUARE_SIZE / 2)), RADIUS)
+    pygame.display.update()
+
+# Initialize Pygame and set up display
+board = initialize_board()
+display_board(board)
+game_over = False
+
+pygame.init()
+
+SQUARE_SIZE = 100
+width = COLUMNS * SQUARE_SIZE
+height = (ROWS + 1) * SQUARE_SIZE
+size = (width, height)
+RADIUS = int(SQUARE_SIZE / 2 - 5)
+
+screen = pygame.display.set_mode(size)
+render_board(board)
+pygame.display.update()
+
+myfont = pygame.font.SysFont("monospace", 75)
+turn = random.randint(HUMAN, COMPUTER)
+
+# Game loop
+while not game_over:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            sys.exit()
+
+        if event.type == pygame.MOUSEMOTION:
+            pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARE_SIZE))
+            posx = event.pos[0]
+            if turn == HUMAN:
+                pygame.draw.circle(screen, RED, (posx, int(SQUARE_SIZE / 2)), RADIUS)
+            pygame.display.update()
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARE_SIZE))
+            if turn == HUMAN:
+                posx = event.pos[0]
+                col = int(math.floor(posx / SQUARE_SIZE))
+                if is_column_open(board, col):
+                    row = get_open_row(board, col)
+                    drop_disc(board, row, col, HUMAN_PIECE)
+                    if check_win(board, HUMAN_PIECE):
+                        label = myfont.render("Human wins!", 1, RED)
+                        screen.blit(label, (40, 10))
+                        game_over = True
+                    turn = COMPUTER
+                    display_board(board)
+                    render_board(board)
+
+    if turn == COMPUTER and not game_over:
+        col, minimax_score = minimax(board, 5, -math.inf, math.inf, True)
+        if is_column_open(board, col):
+            row = get_open_row(board, col)
+            drop_disc(board, row, col, COMPUTER_PIECE)
+            if check_win(board, COMPUTER_PIECE):
+                label = myfont.render("Computer wins!", 1, YELLOW)
+                screen.blit(label, (40, 10))
+                game_over = True
+            display_board(board)
+            render_board(board)
+            turn = HUMAN
+
+    if game_over:
+        pygame.time.wait(3000)
